@@ -3,6 +3,8 @@ use chrono::{DateTime, Utc};
 use std::{fmt::Write, fs::{self, write, File, OpenOptions}, io::Read, thread, time::{Instant, Duration, SystemTime, UNIX_EPOCH}};
 use serde::Serialize;
 use csv::{Reader, StringRecord, Writer};
+use reqwest::blocking::Client;
+mod secret;
 
 
 #[derive(Serialize)]
@@ -50,6 +52,7 @@ fn main() {
     let temp = Record{price: symbol, depthbids: depthbids, depthasks: depthasks, time: formatted};
     if tick_counter == 2592000 {
         tick_counter = 0;
+        send_to_cloud_storage(&path);
         path = new_file_for_month(csv_number);
         csv_number += 1;
     }
@@ -209,6 +212,24 @@ fn new_file_for_month(number: i32) -> String {
     wtr.flush().unwrap();
 
     return path
+}
+
+fn send_to_cloud_storage(path: &str){
+    let access_token = secret::access_token;
+    let url = "https://content.dropboxapi.com/2/files/upload";
+
+    let content= fs::read(path).unwrap();
+
+    let client = Client::new();
+
+    let response = client
+    .post(url)
+    .bearer_auth(access_token)
+    .header("Dropbox-API-Arg", r#"{"path": "/your-file.csv"}"#)
+    .header("Content-Type", "application/octet-stream")
+    .body(file_content)
+    .send()
+    .unwrap();
 }
 
 #[cfg(test)]
