@@ -43,7 +43,6 @@ fn main() {
     let depth = market.get_depth("BTCUSDT").unwrap();
     tick_counter += 1;
     let timestamp = SystemTime::now();
-    println!("{:?}", symbol);
     let datetime: DateTime<Utc> = timestamp.into();
     let formatted = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
     let depthbids = bid_to_vector(depth.bids);
@@ -210,4 +209,14 @@ fn new_file_for_month(number: i32) -> String {
     wtr.flush().unwrap();
 
     return path
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::new_file_for_month;
+
+    #[test]
+    fn test_new_file(){
+        _ = new_file_for_month(15)
+    }
 }
