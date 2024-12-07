@@ -3,7 +3,9 @@ use chrono::{DateTime, Utc};
 use std::{fmt::Write, fs::{self, write, File, OpenOptions}, io::Read, thread, time::{Instant, Duration, SystemTime, UNIX_EPOCH}};
 use serde::Serialize;
 use csv::{Reader, StringRecord, Writer};
-use reqwest::blocking::Client;
+use reqwest::Client;
+use std::future::{Future};
+use std::task::{Context, Poll};
 mod secret;
 
 
@@ -214,30 +216,75 @@ fn new_file_for_month(number: i32) -> String {
     return path
 }
 
-fn send_to_cloud_storage(path: &str){
-    let access_token = secret::access_token;
+async fn send_to_cloud_storage(path: &str){
+    let access_token = secret::TICKER_ACCESS;
     let url = "https://content.dropboxapi.com/2/files/upload";
 
     let content= fs::read(path).unwrap();
 
-    let client = Client::new();
+    let client = Client::builder()
+    .timeout(Duration::from_secs(60))
+    .build()
+    .unwrap();
+
+    let dropbox_api_arg = format!(r#"{{"path":"/output.csv","mode":"add","autorename":false,"mute":false,"strict_conflict":false}}"#);
+
+    //let client = Client::new();
 
     let response = client
     .post(url)
     .bearer_auth(access_token)
-    .header("Dropbox-API-Arg", r#"{"path": "/your-file.csv"}"#)
+    .header("Dropbox-API-Arg", dropbox_api_arg)
     .header("Content-Type", "application/octet-stream")
-    .body(file_content)
+    .body(content)
     .send()
-    .unwrap();
+    .await;
+
+    match response {
+        Ok(response) => {
+            println!("Response: {:?}", response);
+        }
+        Err(e) => {
+            println!("Request failed: {:?}", e);
+        }
+    }
+}
+
+fn poll_async<F>(future: F)
+where
+    F: Future,
+    F::Output: std::fmt::Debug, 
+{
+    let mut future = Box::pin(future);
+    let waker = futures::task::noop_waker();
+    let mut cx = Context::from_waker(&waker);
+
+    loop {
+    match future.as_mut().poll(&mut cx) {
+        Poll::Ready(result) => {
+            println!("Completed with: {:?}", result);
+            break;},
+        Poll::Pending => {
+            print!("still pending");
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            },
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::new_file_for_month;
+    use std::future::{Future, PollFn};
+
+    use crate::{new_file_for_month, poll_async, send_to_cloud_storage};
 
     #[test]
     fn test_new_file(){
         _ = new_file_for_month(15)
+    }
+
+    #[tokio::test]
+    async fn test_cloud_storage() {
+        send_to_cloud_storage("output.csv").await;
     }
 }
