@@ -1,11 +1,16 @@
 use binance::{api::Binance, market::*, model::{OrderBook, Symbol, Asks, Bids}};
 use chrono::{DateTime, Utc};
+use tokio::task;
+use tokio::runtime::Runtime;
 use std::{fmt::Write, fs::{self, write, File, OpenOptions}, io::Read, thread, time::{Instant, Duration, SystemTime, UNIX_EPOCH}};
 use serde::Serialize;
+use serde_json;
 use csv::{Reader, StringRecord, Writer};
 use reqwest::Client;
+use base64::{self, engine::general_purpose, Engine};
 use std::future::{Future};
 use std::task::{Context, Poll};
+use std::collections::HashMap;
 mod secret;
 
 
@@ -24,8 +29,9 @@ impl Record {
     }
 }
 
-
 fn main() {
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
 
     //let api_key = Some("Yourapikey".into());
     //let secret_key = Some("yoursecretkey".into());
@@ -52,9 +58,10 @@ fn main() {
     let depthbids = bid_to_vector(depth.bids);
     let depthasks = ask_to_vector(depth.asks);
     let temp = Record{price: symbol, depthbids: depthbids, depthasks: depthasks, time: formatted};
-    if tick_counter == 2592000 {
+    if tick_counter == 60 {
         tick_counter = 0;
-        send_to_cloud_storage(&path);
+        let async_path = path.clone();
+        rt.spawn( async { send_to_cloud_storage(async_path).await; });
         path = new_file_for_month(csv_number);
         csv_number += 1;
     }
@@ -216,8 +223,8 @@ fn new_file_for_month(number: i32) -> String {
     return path
 }
 
-async fn send_to_cloud_storage(path: &str){
-    let access_token = secret::TICKER_ACCESS;
+async fn send_to_cloud_storage(path: String){
+    let access_token = get_new_access_token().await;
     let url = "https://content.dropboxapi.com/2/files/upload";
 
     let content= fs::read(path).unwrap();
@@ -250,6 +257,45 @@ async fn send_to_cloud_storage(path: &str){
     }
 }
 
+async fn get_new_access_token () -> String {
+    let url = "https://api.dropboxapi.com/oauth2/token";
+
+    let client = Client::builder()
+    .timeout(Duration::from_secs(60))
+    .build()
+    .unwrap();
+
+    let credentials = format!("{}:{}", secret::ID, secret::SECRET);
+    let encoded_credentials = general_purpose::STANDARD.encode(credentials);
+
+    let response = client
+    .post(url)
+    .header("Authorization", format!("Basic {}", encoded_credentials))
+    .form(&[("grant_type", "refresh_token"),("refresh_token", secret::REFRESH)])
+    .send()
+    .await;
+
+    match response {
+        Ok( response) => {
+        let body = response.text().await;
+        match body {
+            Ok(body) => {
+                let json: HashMap<String, serde_json::Value> = serde_json::from_str(&body).unwrap();
+                println!("Response: {:?}", json);
+                return json.get("access_token").unwrap().as_str().unwrap_or("fail").to_string();
+            }
+            Err(e) => {
+                println!("Request failed: {:?}", e);
+            }
+        }
+    } 
+    Err(e) => {
+        eprintln!("Error: {}", e);
+    }
+}
+    return "".to_string(); 
+}
+
 fn poll_async<F>(future: F)
 where
     F: Future,
@@ -276,7 +322,7 @@ where
 mod tests {
     use std::future::{Future, PollFn};
 
-    use crate::{new_file_for_month, poll_async, send_to_cloud_storage};
+    use crate::{get_new_access_token, new_file_for_month, poll_async, send_to_cloud_storage};
 
     #[test]
     fn test_new_file(){
@@ -285,6 +331,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_cloud_storage() {
-        send_to_cloud_storage("output.csv").await;
+        let str: String= "output.csv".to_string();
+        send_to_cloud_storage(str).await;
+    }
+
+    #[tokio::test]
+    async fn test_get_token() {
+        let str = get_new_access_token().await;
+        println!("{}",str);
     }
 }

@@ -129,12 +129,14 @@ dependencies = [
 name = "binancebot"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "binance",
  "chrono",
  "csv",
  "futures",
  "reqwest",
  "serde",
+ "serde_json",
  "tokio",
 ]
 
