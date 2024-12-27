@@ -58,7 +58,7 @@ fn main() {
     let depthbids = bid_to_vector(depth.bids);
     let depthasks = ask_to_vector(depth.asks);
     let temp = Record{price: symbol, depthbids: depthbids, depthasks: depthasks, time: formatted};
-    if tick_counter == 60 {
+    if tick_counter == 20 {
         tick_counter = 0;
         let async_path = path.clone();
         rt.spawn( async { send_to_cloud_storage(async_path).await; });
@@ -227,14 +227,16 @@ async fn send_to_cloud_storage(path: String){
     let access_token = get_new_access_token().await;
     let url = "https://content.dropboxapi.com/2/files/upload";
 
-    let content= fs::read(path).unwrap();
+    println!("stcs sttring: {}",path);
+
+    let content= fs::read(&path).unwrap();
 
     let client = Client::builder()
     .timeout(Duration::from_secs(60))
     .build()
     .unwrap();
 
-    let dropbox_api_arg = format!(r#"{{"path":"/output.csv","mode":"add","autorename":false,"mute":false,"strict_conflict":false}}"#);
+    let dropbox_api_arg = format!(r#"{{"path":"/{}","mode":"add","autorename":false,"mute":false,"strict_conflict":false}}"#, path);
 
     //let client = Client::new();
 
