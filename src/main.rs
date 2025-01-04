@@ -2,6 +2,7 @@ use binance::{api::Binance, market::*, model::{OrderBook, Symbol, Asks, Bids}};
 use chrono::{DateTime, Utc};
 use tokio::task;
 use tokio::runtime::Runtime;
+use tokio::time::sleep;
 use std::{fmt::Write, fs::{self, write, File, OpenOptions}, io::Read, thread, time::{Instant, Duration, SystemTime, UNIX_EPOCH}};
 use serde::Serialize;
 use serde_json;
@@ -40,17 +41,38 @@ fn main() {
     let mut tick_counter = 0;
 
     let interval = Duration::from_secs(1);
-    let mut next_tick = Instant::now() +interval;
     let mut path: String = String::from("output.csv");
     let mut csv_number = 1;
+    let mut next_tick = Instant::now() +interval;
 
     loop {
-    let mut symbol: f64 = 0.0;
+    let symbol: f64;
     match market.get_price("BTCUSDT") {
         Ok(answer) => symbol = answer.price,
-        Err(e) => println!("Error: {:?}", e),
+        Err(e) => {
+            println!("Error: {:?}", e);
+            let now = Instant::now();
+            if now < next_tick {
+                thread::sleep(next_tick - now);
+                }
+                next_tick += interval;
+            continue
+        }
     }
-    let depth = market.get_depth("BTCUSDT").unwrap();
+    let depth = match market.get_depth("BTCUSDT") {
+        Ok(value) => {
+            value
+        }
+        Err(e) => {
+            println!("Error: {:?}", e);
+            let now = Instant::now();
+            if now < next_tick {
+                thread::sleep(next_tick - now);
+                }
+                next_tick += interval;
+            continue
+        }
+    };
     tick_counter += 1;
     let timestamp = SystemTime::now();
     let datetime: DateTime<Utc> = timestamp.into();
@@ -69,28 +91,10 @@ fn main() {
 
     let now = Instant::now();
     if now < next_tick {
-        //println!("{:?}",next_tick - now);
         thread::sleep(next_tick - now);
         }
     next_tick += interval;
     }
-
-    // let read = read_csv();
-
-    // let mut ask: Vec<Bids> = Vec::new();
-
-    // for value in read.into_iter() {
-    //     let start = Instant::now();
-    //     let symbol = value.price;
-    //     let mut bids = vector_to_bid(&value.depthbids);
-    //     let asks = vector_to_ask(&value.depthasks);
-    //     ask = vector_to_bid(&value.depthbids);
-
-    //     //print!("{}, ", bids.pop().unwrap().price);
-    // }
-    // for value in ask {
-    // println!("{} , {}",value.price, value.qty);
-    // }
 }
 
 fn ask_to_vector(asks: Vec<Asks>) -> String {
@@ -224,17 +228,27 @@ fn new_file_for_month(number: i32) -> String {
 }
 
 async fn send_to_cloud_storage(path: String){
+    loop {
     let access_token = get_new_access_token().await;
     let url = "https://content.dropboxapi.com/2/files/upload";
 
-    println!("stcs sttring: {}",path);
+    //println!("stcs string: {}",path);
 
     let content= fs::read(&path).unwrap();
 
-    let client = Client::builder()
+    let client_result = Client::builder()
     .timeout(Duration::from_secs(60))
-    .build()
-    .unwrap();
+    .build();
+    let client = match client_result {
+        Ok(client_result) => {
+            client_result
+        }
+        Err(e) => {
+            println!("Request failed: {:?}", e);
+            sleep(Duration::from_secs(10)).await;
+            continue
+        }
+    };
 
     let dropbox_api_arg = format!(r#"{{"path":"/{}","mode":"add","autorename":false,"mute":false,"strict_conflict":false}}"#, path);
 
@@ -252,20 +266,34 @@ async fn send_to_cloud_storage(path: String){
     match response {
         Ok(response) => {
             println!("Response: {:?}", response);
-        }
+            }
         Err(e) => {
             println!("Request failed: {:?}", e);
+            }
         }
+    break
     }
 }
 
 async fn get_new_access_token () -> String {
     let url = "https://api.dropboxapi.com/oauth2/token";
 
-    let client = Client::builder()
+    loop {
+
+    let client_result = Client::builder()
     .timeout(Duration::from_secs(60))
-    .build()
-    .unwrap();
+    .build();
+    let client = match client_result {
+        Ok(client_result) => {
+            client_result
+        }
+        Err(e) => {
+            println!("Request failed: {:?}", e);
+            //3600
+            sleep(Duration::from_secs(10)).await;
+            continue
+        }
+    };
 
     let credentials = format!("{}:{}", secret::ID, secret::SECRET);
     let encoded_credentials = general_purpose::STANDARD.encode(credentials);
@@ -281,21 +309,25 @@ async fn get_new_access_token () -> String {
         Ok( response) => {
         let body = response.text().await;
         match body {
-            Ok(body) => {
-                let json: HashMap<String, serde_json::Value> = serde_json::from_str(&body).unwrap();
-                println!("Response: {:?}", json);
-                return json.get("access_token").unwrap().as_str().unwrap_or("fail").to_string();
-            }
-            Err(e) => {
-                println!("Request failed: {:?}", e);
+                Ok(body) => {
+                    let json: HashMap<String, serde_json::Value> = serde_json::from_str(&body).unwrap();
+                    println!("Response: {:?}", json);
+                    return json.get("access_token").unwrap().as_str().unwrap_or("fail").to_string();
+                }
+                Err(e) => {
+                    println!("Request failed: {:?}", e);
+                    sleep(Duration::from_secs(600)).await;
+                    continue;
+                }
             }
         }
-    } 
-    Err(e) => {
-        eprintln!("Error: {}", e);
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            sleep(Duration::from_secs(600)).await;
+            continue;
+        }
     }
-}
-    return "".to_string(); 
+    }
 }
 
 fn poll_async<F>(future: F)
