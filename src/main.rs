@@ -80,7 +80,7 @@ fn main() {
     let depthbids = bid_to_vector(depth.bids);
     let depthasks = ask_to_vector(depth.asks);
     let temp = Record{price: symbol, depthbids: depthbids, depthasks: depthasks, time: formatted};
-    if tick_counter == 20 {
+    if tick_counter == 1_296_000 {
         tick_counter = 0;
         let async_path = path.clone();
         rt.spawn( async { send_to_cloud_storage(async_path).await; });
@@ -245,7 +245,7 @@ async fn send_to_cloud_storage(path: String){
         }
         Err(e) => {
             println!("Request failed: {:?}", e);
-            sleep(Duration::from_secs(10)).await;
+            sleep(Duration::from_secs(600)).await;
             continue
         }
     };
@@ -273,6 +273,10 @@ async fn send_to_cloud_storage(path: String){
         }
     break
     }
+    match fs::remove_file(&path) {
+        Ok(_) => println!("success"),
+        Err(e) => eprintln!("Failed to delete file: {}", e),
+    }
 }
 
 async fn get_new_access_token () -> String {
@@ -290,7 +294,7 @@ async fn get_new_access_token () -> String {
         Err(e) => {
             println!("Request failed: {:?}", e);
             //3600
-            sleep(Duration::from_secs(10)).await;
+            sleep(Duration::from_secs(600)).await;
             continue
         }
     };
@@ -316,14 +320,14 @@ async fn get_new_access_token () -> String {
                 }
                 Err(e) => {
                     println!("Request failed: {:?}", e);
-                    sleep(Duration::from_secs(600)).await;
+                    sleep(Duration::from_secs(3600)).await;
                     continue;
                 }
             }
         }
         Err(e) => {
             eprintln!("Error: {}", e);
-            sleep(Duration::from_secs(600)).await;
+            sleep(Duration::from_secs(3600)).await;
             continue;
         }
     }
