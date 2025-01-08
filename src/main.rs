@@ -80,7 +80,8 @@ fn main() {
     let depthbids = bid_to_vector(depth.bids);
     let depthasks = ask_to_vector(depth.asks);
     let temp = Record{price: symbol, depthbids: depthbids, depthasks: depthasks, time: formatted};
-    if tick_counter == 14_400 {
+    // 28_800
+    if tick_counter == 28_800 {
         tick_counter = 0;
         let async_path = path.clone();
         rt.spawn( async { send_to_cloud_storage(async_path).await; });
@@ -237,7 +238,7 @@ async fn send_to_cloud_storage(path: String){
     let content= fs::read(&path).unwrap();
 
     let client_result = Client::builder()
-    .timeout(Duration::from_secs(60))
+    .timeout(Duration::from_secs(300))
     .build();
     let client = match client_result {
         Ok(client_result) => {
